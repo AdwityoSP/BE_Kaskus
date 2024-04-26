@@ -24,3 +24,9 @@ Add dockerfile
 Add docker tutorial for deployment
 
 Create data in csv and script for migrate using alembic and sqlscript
+
+# To Start :
+
+In terminal type: uvicorn app:app
+
+In localhost open : http://127.0.0.1:8000/docs
