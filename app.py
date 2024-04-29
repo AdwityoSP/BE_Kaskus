@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey
+from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey, Text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker
 from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, status, APIRouter
@@ -7,6 +7,7 @@ from typing import List, Optional
 import base64
 from pydantic import BaseModel
 from sqlalchemy.dialects.postgresql import OID
+from fastapi.responses import JSONResponse, Response
 
 Base = declarative_base()
 
@@ -78,7 +79,7 @@ class Rating(Base):
 class User(Base):
     __tablename__ = 'user'
     id = Column(Integer, primary_key=True)
-    user_pict = Column(OID)
+    user_pict = Column(Text)
     name = Column(String(255))
     email = Column(String(255))
 
@@ -531,14 +532,53 @@ async def create_user(name: str, email: str, user_pict: UploadFile = File(None),
 @app.get("/users/{user_id}", response_model=UserDisplay)
 def read_user(user_id: int, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.id == user_id).first()
-    if user is None:
+    if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    return user
 
-@app.get("/users/", response_model=List[UserDisplay])
-def read_users(db: Session = Depends(get_db)):
+    user_data = {
+        "id": user.id,
+        "name": user.name,
+        "email": user.email,
+        "user_pict": None
+    }
+
+    if user.user_pict:
+        try:
+            user_data["user_pict"] = "data:image/jpeg;base64," + user.user_pict
+        except Exception as e:
+            raise HTTPException(status_code=500, detail="Error processing image data")
+
+    return JSONResponse(content=user_data)
+
+@app.get("/users")
+def read_all_user(db: Session = Depends(get_db)):
     users = db.query(User).all()
-    return users
+    response = []
+    for user in users:
+        user_data = {
+            "id": user.id,
+            "name": user.name,
+            "email": user.email,
+            "user_pict": "data:image/jpeg;base64," + user.user_pict if user.user_pict else "No image available"
+        }
+        response.append(user_data)
+    return response
+
+@app.get("/users/{user_id}/image")
+def read_user_image(user_id: int, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if not user.user_pict:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    try:
+        image_data = base64.b64decode(user.user_pict)
+    except ValueError:
+        raise HTTPException(status_code=500, detail="Error decoding image data")
+
+    return Response(content=image_data, media_type="image/jpeg")
 
 @app.put("/users/{user_id}", response_model=UserDisplay)
 async def update_user(user_id: int, name: Optional[str] = None, email: Optional[str] = None, user_pict: UploadFile = File(None), db: Session = Depends(get_db)):
